@@ -48,7 +48,7 @@ def load_csv(file_name):
     return data
 
 
-def score(X, y, syn0, syn1):
+def predict(X, syn0, syn1):
     x_ = np.matrix(np.empty((X.shape[0], X.shape[1]+1)))
     x_[:, 0] = 1
     x_[:, 1:] = X
@@ -59,7 +59,11 @@ def score(X, y, syn0, syn1):
     l1_[:, 0] = 1
     l1_[:, 1:] = l1
     l2 = 1 / (1 + np.exp(-(np.dot(l1_, syn1))))
-    predicted = (l2 >= 0.5).astype(float)
+    return (l2 >= 0.5).astype(float)
+
+
+def score(X, y, syn0, syn1):
+    predicted = predict(X, syn0, syn1)
     return np.sum(1.0 * y[predicted == y]) / np.sum(1.0 * y)
 
 
@@ -125,7 +129,19 @@ def run_test():
     pass
 
 
-if __name__ == "__main__":
+def column_values(data, offset=0):
+    """
+
+    :param data:
+    :param offset:  use -1 offset to adjust the index/key for each column on the test dataset
+    :return:
+    """
+    values = dict([(i + offset, np.unique([d[i] for d in data])) for i in [2, 4, 11]])
+    values[10 + offset] = np.unique([d[10][0] for d in data if len(d[10]) > 0])
+    return values
+
+
+def train(loops=10, iterations=10000):
     data = load_csv('data/train.csv')
 
     y = np.matrix([d[1] for d in data]).T.astype('float')
@@ -133,8 +149,7 @@ if __name__ == "__main__":
     # categorical/non-continuous variables: 2 (Pclass), 4 (sex), 10 (Cabin), 11 (Embarked)
     # split the 'cabin' variable on the letter component
     # maybe: 6 (SibSp), 7 (Parch)
-    d_values = dict([(i, np.unique([d[i] for d in data])) for i in [2, 4, 11]])
-    d_values[10] = np.unique([d[10][0] for d in data if len(d[10]) > 0])
+    d_values = column_values(data)
 
     cols = range(2, len(data[0]))
 
@@ -143,9 +158,10 @@ if __name__ == "__main__":
     X = [[[d[c] == v for v in d_values[c]] if d_values.has_key(c) else [d[c]] for c in cols if c not in [3, 8]] for d in data]
     X = np.matrix([[float(i) if i != '' else 0.0 for items in row for i in items] for row in X]).astype(float)
 
-    for i in range(1, 10):
+    for i in range(1, loops):
         #for reg in [0.01, 0.03, 0.1, 0.3, 1.0, 3.0]: #, 10.0]:
-        for reg in [0, 0.01, 0.03]:
+        #for reg in [0, 0.01, 0.03]:
+        for reg in [0.01]:
             s0 = None
             s1 = None
             try:
@@ -154,5 +170,51 @@ if __name__ == "__main__":
                 print 'couldn\'t load'
                 pass
 
-            result = iterate(X, y, [s0, s1], reg, 10000)
+            result = iterate(X, y, [s0, s1], reg, iterations)
             np.save('theta_{0}'.format(reg), result)
+
+
+def test():
+    data = load_csv('data/test.csv')
+    # in the test dataset we have one less column (1/survived)
+    # everything is bumped down one column
+
+    # categorical/non-continuous variables: 2 (Pclass), 4 (sex), 10 (Cabin), 11 (Embarked)
+    # split the 'cabin' variable on the letter component
+    # maybe: 6 (SibSp), 7 (Parch)
+    train_data = load_csv('data/train.csv')
+    d_values = column_values(train_data, -1)
+
+    cols = range(1, len(data[0]))
+
+    # make a list of lists for each row before flattening. Doing the nested lookup (for v in d_values) is hard.
+    # remove the name and ticket
+
+    # to ensure data is the same shape we will load the train data then remove it.
+    X = [[[d[c] == v for v in d_values[c]] if c in d_values else [d[c]] for c in cols if c not in [2, 7]] for d in data]
+    X = [[float(i) if i != '' else 0.0 for items in row for i in items] for row in X]
+    X = np.matrix(X).astype(float)
+    m = X.shape[0]
+
+    for reg in [0, 0.01, 0.03]:
+        [s0, s1] = np.load('theta_{0}.npy'.format(reg))
+        result = np.matrix(np.empty((m, 2)))
+        result[:, 0] = np.matrix(np.array([d[0] for d in data])).T
+        result[:, 1] = predict(X, s0, s1)
+        result = result.astype(int)
+        with open('predict_{0}'.format(reg), 'wb') as f:
+            f.write('PassengerId,Survived\n')
+            np.savetxt(f, result, fmt='%d', delimiter=',')
+
+
+if __name__ == "__main__":
+    '''
+    train_data =load_csv('data/train.csv')
+    d = train_data[0]
+    d_values = column_values(train_data)
+    [[d[c] == v for v in d_values[c]] if d_values.has_key(c) else [d[c]] for c in cols if c not in [3, 8]]
+
+    t1 = load_csv('data/test.csv')[0]
+    '''
+    test()
+    #train(50)
