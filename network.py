@@ -63,40 +63,59 @@ def score(X, y, syn0, syn1):
     return np.sum(1.0 * y[predicted == y]) / np.sum(1.0 * y)
 
 
-def iterate(X, y, s, reg):
+def iterate(X, y, s, reg, iterations):
     m = X.shape[0]
     reg_rate = 1.0 if reg is None else reg
-    rate = 0.005
+    rate = 0.03
     syn0 = s[0] if s[0] is not None else 2*np.random.random((X.shape[1]+1, 10)) - 1
     syn1 = s[1] if s[1] is not None else 2*np.random.random((11, 1)) - 1
     x_ = np.matrix(np.empty((X.shape[0], X.shape[1]+1)))
     x_[:, 0] = 1
     x_[:, 1:] = X
-    for j in xrange(10000):
-        l1 = 1/(1+np.exp(-(np.dot(x_, syn0))))
+    for j in xrange(iterations):
+        '''
+        # for batches let's chunk up the x_ & y arrays, and change m
+        batch = 10
+        indices = range(j, j + batch)
+        xx = np.matrix(np.empty((batch, x_.shape[1])))
+        xx[:, :] = [x_[ix % m] for ix in indices]
 
-        # gotta add that bias term
-        l1_ = np.matrix(np.empty((l1.shape[0], l1.shape[1]+1)))
-        l1_[:, 0] = 1
-        l1_[:, 1:] = l1
+        yy = np.matrix(np.empty((batch, 1)))
+        yy[:, :] = [y[ix % m] for ix in indices]
 
-        l2 = 1/(1+np.exp(-(np.dot(l1_, syn1))))
-        l2_delta = np.multiply((y - l2), (np.multiply(l2, (1-l2))))
-        l1_delta = np.multiply(l2_delta.dot(syn1.T), np.multiply(l1_, (1-l1_)))
-        syn1 += rate / m * (l1_.T.dot(l2_delta) - float(reg_rate) * syn1)
+        syn0, syn1, l2 = descend(xx, yy, syn0, syn1, reg_rate, rate, batch)
+        '''
 
-        # got to drop off the error for the bias term (don't care about this
-        syn0 += rate / m * (x_.T.dot(l1_delta[:, 1:]) - float(reg_rate) * syn0)
-
+        syn0, syn1, l2 = descend(x_, y, syn0, syn1, reg_rate, rate, m)
         if j % 100 == 0:
+            #syn0, syn1, l2 = descend(x_, y, syn0, syn1, reg_rate, rate, m)
             print 'reg_rate {0}'.format(reg_rate), 'cost =', cost(l2, y, [syn0, syn1], reg_rate),
             sys.stdout.flush()
             print '\r',
 
+    #syn0, syn1, l2 = descend(x_, y, syn0, syn1, reg_rate, rate, m)
     print 'reg_rate {0}'.format(reg_rate), 'cost =', cost(l2, y, [syn0, syn1], reg_rate), \
         'score = {0:.0f}%'.format(100 * score(X, y, syn0, syn1))
 
     return syn0, syn1
+
+
+def descend(x_, y, syn0, syn1, reg_rate, rate, m):
+    l1 = 1 / (1 + np.exp(-(np.dot(x_, syn0))))
+
+    # gotta add that bias term
+    l1_ = np.matrix(np.empty((l1.shape[0], l1.shape[1] + 1)))
+    l1_[:, 0] = 1
+    l1_[:, 1:] = l1
+
+    l2 = 1 / (1 + np.exp(-(np.dot(l1_, syn1))))
+    l2_delta = np.multiply((y - l2), (np.multiply(l2, (1 - l2))))
+    l1_delta = np.multiply(l2_delta.dot(syn1.T), np.multiply(l1_, (1 - l1_)))
+    syn1 += rate / m * (l1_.T.dot(l2_delta) - float(reg_rate) * syn1)
+
+    # got to drop off the error for the bias term (don't care about this
+    syn0 += rate / m * (x_.T.dot(l1_delta[:, 1:]) - float(reg_rate) * syn0)
+    return syn0, syn1, l2
 
 
 def run_test():
@@ -124,14 +143,16 @@ if __name__ == "__main__":
     X = [[[d[c] == v for v in d_values[c]] if d_values.has_key(c) else [d[c]] for c in cols if c not in [3, 8]] for d in data]
     X = np.matrix([[float(i) if i != '' else 0.0 for items in row for i in items] for row in X]).astype(float)
 
-    for i in range(1, 1000):
-        for reg in [0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0]:
+    for i in range(1, 10):
+        #for reg in [0.01, 0.03, 0.1, 0.3, 1.0, 3.0]: #, 10.0]:
+        for reg in [0, 0.01, 0.03]:
             s0 = None
             s1 = None
             try:
-                [s0, s1] = np.load('theta_{0}'.format(reg))
+                [s0, s1] = np.load('theta_{0}.npy'.format(reg))
             except:
+                print 'couldn\'t load'
                 pass
 
-            result = iterate(X, y, [s0, s1], reg)
+            result = iterate(X, y, [s0, s1], reg, 10000)
             np.save('theta_{0}'.format(reg), result)
